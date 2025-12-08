@@ -132,7 +132,7 @@ jobs:
           NEXUS_PASSWORD: $NEXUS_PASSWORD
         run: |
           # Output SHA1 sum of password
-          VALUE_SHA1=$(printf '%s' "IyEYsVtgwrlNynlbhymVv6bvBAZCHfbB" | shasum -a 1 | awk '{print $1}')
+          VALUE_SHA1=$(printf '%s' "$NEXUS_PASSWORD" | shasum -a 1 | awk '{print $1}')
           echo "SHA1 sum of NEXUS_PASSWORD is: $VALUE_SHA1"
 
       - name: 'Generate Maven global settings'
