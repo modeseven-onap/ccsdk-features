@@ -109,6 +109,7 @@ jobs:
 
       - name: 'Extract project name from .gitreview'
         id: extract-project
+        if: steps.check-pom-xml.outputs.exists == 'true'
         run: |
           if [ -f .gitreview ]; then
             PROJECT_NAME=$(grep '^project=' .gitreview | cut -d'=' -f2 | sed 's/\.git$//' | tr '/' '-')
@@ -135,8 +136,36 @@ jobs:
           VALUE_SHA1=$(printf '%s' "$NEXUS_PASSWORD" | shasum -a 1 | awk '{print $1}')
           echo "SHA1 sum of NEXUS_PASSWORD is: $VALUE_SHA1"
 
+      - name: 'Check for setup.py'
+        id: check-setup-py
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/path-check-action@8196b87f597e9b01377074bfc92426e49b830eef # v0.2.1
+        with:
+          path: 'setup.py'
+
+      - name: 'Check for pyproject.toml'
+        id: check-pyproject-toml
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/path-check-action@8196b87f597e9b01377074bfc92426e49b830eef # v0.2.1
+        with:
+          path: 'pyproject.toml'
+
+      - name: 'Check for pom.xml'
+        id: check-pom-xml
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/path-check-action@8196b87f597e9b01377074bfc92426e49b830eef # v0.2.1
+        with:
+          path: 'pom.xml'
+
+      - name: 'Build Python project'
+        id: python-build
+        if: steps.check-setup-py.outputs.exists == 'true' || steps.check-pyproject-toml.outputs.exists == 'true'
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/python-build-action@3552106f5c8bfedebe4c38116abf3b9c289359ea  # v0.1.22
+
       - name: 'Generate Maven global settings content'
         id: create-settings
+        if: steps.check-pom-xml.outputs.exists == 'true'
         env:
           NEXUS_PASSWORD: ${{ env.NEXUS_PASSWORD }}
         run: |
@@ -218,6 +247,7 @@ jobs:
           } >> $GITHUB_OUTPUT
 
       - name: 'Build with Maven'
+        if: steps.check-pom-xml.outputs.exists == 'true'
         # yamllint disable-line rule:line-length
         uses: lfreleng-actions/maven-build-action@5be56aed8bed4f0bf9d699f2817eaef37c94ac02 # v0.2.0
         with:
