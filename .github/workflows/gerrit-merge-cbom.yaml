@@ -135,7 +135,7 @@ jobs:
           VALUE_SHA1=$(printf '%s' "$NEXUS_PASSWORD" | shasum -a 1 | awk '{print $1}')
           echo "SHA1 sum of NEXUS_PASSWORD is: $VALUE_SHA1"
 
-      - name: 'Generate Maven global settings'
+      - name: 'Generate Maven global settings content'
         id: create-settings
         env:
           NEXUS_PASSWORD: ${{ env.NEXUS_PASSWORD }}
@@ -149,7 +149,10 @@ jobs:
             exit 1
           fi
 
-          cat > global-settings.xml << EOF
+          # Generate settings content for maven-build-action
+          {
+            echo 'settings-content<<SETTINGS_EOF'
+            cat << EOF
           <settings>
             <servers>
               <server>
@@ -211,9 +214,6 @@ jobs:
             </activeProfiles>
           </settings>
           EOF
-          {
-            echo 'settings-content<<SETTINGS_EOF'
-            cat global-settings.xml
             echo 'SETTINGS_EOF'
           } >> $GITHUB_OUTPUT
 
