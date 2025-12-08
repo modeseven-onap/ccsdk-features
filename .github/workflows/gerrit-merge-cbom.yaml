@@ -84,11 +84,95 @@ jobs:
       - name: Allow replication
         run: sleep 10s
 
+  discover-projects:
+    name: 'Discover Python and Maven Projects'
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [notify]
+    outputs:
+      python-projects: ${{ steps.find-python.outputs.projects }}
+      has-python: ${{ steps.find-python.outputs.has-python }}
+      has-maven: ${{ steps.check-maven.outputs.exists }}
+    steps:
+      # Harden the runner used by this workflow
+      # yamllint disable-line rule:line-length
+      - uses: step-security/harden-runner@df199fb7be9f65074067a9eb93f12bb4c5547cf2  # v2.13.3
+        with:
+          egress-policy: audit
+
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/checkout-gerrit-change-action@54d751e8bd167bc91f7d665dabe33fae87aaaa63 # v0.9
+        with:
+          gerrit-refspec: ${{ inputs.GERRIT_REFSPEC }}
+          gerrit-url: ${{ vars.GERRIT_URL }}
+          delay: "0s"
+
+      - name: 'Find Python projects'
+        id: find-python
+        run: |
+          # Find all directories containing setup.py or pyproject.toml
+          PYTHON_DIRS=()
+          while IFS= read -r file; do
+            dir=$(dirname "$file")
+            PYTHON_DIRS+=("$dir")
+          done < <(find . -type f \( -name "setup.py" -o -name "pyproject.toml" \) | sed 's|^\./||')
+          
+          if [ ${#PYTHON_DIRS[@]} -gt 0 ]; then
+            echo "has-python=true" >> $GITHUB_OUTPUT
+            echo "Python projects found in:"
+            printf '%s\n' "${PYTHON_DIRS[@]}"
+            
+            # Create JSON array for matrix
+            JSON_ARRAY=$(printf '%s\n' "${PYTHON_DIRS[@]}" | jq -R . | jq -s -c .)
+            echo "projects=$JSON_ARRAY" >> $GITHUB_OUTPUT
+          else
+            echo "has-python=false" >> $GITHUB_OUTPUT
+            echo "projects=[]" >> $GITHUB_OUTPUT
+            echo "No Python projects found"
+          fi
+
+      - name: 'Check for pom.xml'
+        id: check-maven
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/path-check-action@9606e61c870025bc956e63156d1d55c5df54426c # v0.2.0
+        with:
+          path: 'pom.xml'
+
+  python-build:
+    name: 'Build Python Project'
+    runs-on: ubuntu-latest
+    if: needs.discover-projects.outputs.has-python == 'true'
+    needs: [discover-projects]
+    strategy:
+      matrix:
+        python-project: ${{ fromJson(needs.discover-projects.outputs.python-projects) }}
+      fail-fast: false
+    steps:
+      # Harden the runner used by this workflow
+      # yamllint disable-line rule:line-length
+      - uses: step-security/harden-runner@df199fb7be9f65074067a9eb93f12bb4c5547cf2  # v2.13.3
+        with:
+          egress-policy: audit
+
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/checkout-gerrit-change-action@54d751e8bd167bc91f7d665dabe33fae87aaaa63 # v0.9
+        with:
+          gerrit-refspec: ${{ inputs.GERRIT_REFSPEC }}
+          gerrit-url: ${{ vars.GERRIT_URL }}
+          delay: "0s"
+
+      - name: 'Build Python project in ${{ matrix.python-project }}'
+        id: python-build
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/python-build-action@3552106f5c8bfedebe4c38116abf3b9c289359ea  # v0.1.22
+        with:
+          path_prefix: ${{ matrix.python-project }}
+
   cbom-create:
     name: 'Generate PQCA CBOM'
     runs-on: ubuntu-latest
     if: always()
-    needs: [notify]
+    needs: [discover-projects, python-build]
     permissions:
       contents: write
       pull-requests: write
@@ -109,7 +193,7 @@ jobs:
 
       - name: 'Extract project name from .gitreview'
         id: extract-project
-        if: steps.check-pom-xml.outputs.exists == 'true'
+        if: needs.discover-projects.outputs.has-maven == 'true'
         run: |
           if [ -f .gitreview ]; then
             PROJECT_NAME=$(grep '^project=' .gitreview | cut -d'=' -f2 | sed 's/\.git$//' | tr '/' '-')
@@ -121,6 +205,7 @@ jobs:
           fi
 
       - name: Load secret from 1Password
+        if: needs.discover-projects.outputs.has-maven == 'true'
         uses: 1password/load-secrets-action@13f58eec611f8e5db52ec16247f58c508398f3e6 # v3.0.0
         with:
           export-env: true
@@ -129,6 +214,7 @@ jobs:
           NEXUS_PASSWORD: "op://elnqtgip7eqavqvgodjbiiaqd4/${{ steps.extract-project.outputs.project-name }}/password"
 
       - name: 'Output SHA1 sum of password'
+        if: needs.discover-projects.outputs.has-maven == 'true'
         env:
           NEXUS_PASSWORD: $NEXUS_PASSWORD
         run: |
@@ -136,36 +222,9 @@ jobs:
           VALUE_SHA1=$(printf '%s' "$NEXUS_PASSWORD" | shasum -a 1 | awk '{print $1}')
           echo "SHA1 sum of NEXUS_PASSWORD is: $VALUE_SHA1"
 
-      - name: 'Check for setup.py'
-        id: check-setup-py
-        # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/path-check-action@9606e61c870025bc956e63156d1d55c5df54426c # v0.2.0
-        with:
-          path: 'setup.py'
-
-      - name: 'Check for pyproject.toml'
-        id: check-pyproject-toml
-        # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/path-check-action@9606e61c870025bc956e63156d1d55c5df54426c # v0.2.0
-        with:
-          path: 'pyproject.toml'
-
-      - name: 'Check for pom.xml'
-        id: check-pom-xml
-        # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/path-check-action@9606e61c870025bc956e63156d1d55c5df54426c # v0.2.0
-        with:
-          path: 'pom.xml'
-
-      - name: 'Build Python project'
-        id: python-build
-        if: steps.check-setup-py.outputs.exists == 'true' || steps.check-pyproject-toml.outputs.exists == 'true'
-        # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/python-build-action@3552106f5c8bfedebe4c38116abf3b9c289359ea  # v0.1.22
-
       - name: 'Generate Maven global settings content'
         id: create-settings
-        if: steps.check-pom-xml.outputs.exists == 'true'
+        if: needs.discover-projects.outputs.has-maven == 'true'
         env:
           NEXUS_PASSWORD: ${{ env.NEXUS_PASSWORD }}
         run: |
@@ -247,7 +306,7 @@ jobs:
           } >> $GITHUB_OUTPUT
 
       - name: 'Build with Maven'
-        if: steps.check-pom-xml.outputs.exists == 'true'
+        if: needs.discover-projects.outputs.has-maven == 'true'
         # yamllint disable-line rule:line-length
         uses: lfreleng-actions/maven-build-action@5be56aed8bed4f0bf9d699f2817eaef37c94ac02 # v0.2.0
         with:
@@ -267,6 +326,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 'Create CBOM'
+        if: needs.discover-projects.outputs.has-maven == 'true' || needs.discover-projects.outputs.has-python == 'true'
         # yamllint disable-line rule:line-length
         uses: PQCA/cbomkit-action@fe04ae510fe80fcfa7d145859fcba8e5dbd0b649 # v2.1.2
         id: cbom
@@ -284,7 +344,7 @@ jobs:
 
   report-status:
     if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.GERRIT_DISABLED != true }}
-    needs: [notify, cbom-create]
+    needs: [notify, discover-projects, python-build, cbom-create]
     runs-on: ubuntu-latest
     steps:
       # Harden the runner used by this workflow
