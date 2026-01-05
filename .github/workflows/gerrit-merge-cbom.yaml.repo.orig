@@ -13,39 +13,39 @@ on:
     inputs:
       GERRIT_BRANCH:
         description: "Branch that change is against"
-        required: false
+        required: true
         type: string
       GERRIT_CHANGE_ID:
         description: "The ID for the change"
-        required: false
+        required: true
         type: string
       GERRIT_CHANGE_NUMBER:
         description: "The Gerrit number"
-        required: false
+        required: true
         type: string
       GERRIT_CHANGE_URL:
         description: "URL to the change"
-        required: false
+        required: true
         type: string
       GERRIT_EVENT_TYPE:
         description: "Type of Gerrit event"
-        required: false
+        required: true
         type: string
       GERRIT_PATCHSET_NUMBER:
         description: "The patch number for the change"
-        required: false
+        required: true
         type: string
       GERRIT_PATCHSET_REVISION:
         description: "The revision sha"
-        required: false
+        required: true
         type: string
       GERRIT_PROJECT:
         description: "Project in Gerrit"
-        required: false
+        required: true
         type: string
       GERRIT_REFSPEC:
         description: "Gerrit refspec of change"
-        required: false
+        required: true
         type: string
       GERRIT_DISABLED:
         description: "Run without Gerrit components"
@@ -66,7 +66,7 @@ jobs:
     steps:
       # Harden the runner used by this workflow
       # yamllint disable-line rule:line-length
-      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76  # v2.14.0
+      - uses: step-security/harden-runner@df199fb7be9f65074067a9eb93f12bb4c5547cf2  # v2.13.3
         with:
           egress-policy: audit
 
@@ -96,23 +96,16 @@ jobs:
     steps:
       # Harden the runner used by this workflow
       # yamllint disable-line rule:line-length
-      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76  # v2.14.0
+      - uses: step-security/harden-runner@df199fb7be9f65074067a9eb93f12bb4c5547cf2  # v2.13.3
         with:
           egress-policy: audit
 
-      # Checkout for Gerrit generated events
       # yamllint disable-line rule:line-length
-      - uses: lfreleng-actions/checkout-gerrit-change-action@54d751e8bd167bc91f7d665dabe33fae87aaaa63  # v0.9
-        if: github.event_name == 'workflow_dispatch' && inputs.GERRIT_DISABLED != true
+      - uses: lfreleng-actions/checkout-gerrit-change-action@54d751e8bd167bc91f7d665dabe33fae87aaaa63 # v0.9
         with:
           gerrit-refspec: ${{ inputs.GERRIT_REFSPEC }}
           gerrit-url: ${{ vars.GERRIT_URL }}
           delay: "0s"
-
-      # Checkout for manual workflow_dispatch
-      # yamllint disable-line rule:line-length
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
-        if: github.event_name == 'workflow_dispatch' && inputs.GERRIT_DISABLED == true
 
       - name: 'Find Python projects'
         id: find-python
@@ -120,26 +113,20 @@ jobs:
           # Find all directories containing setup.py or pyproject.toml
           PYTHON_DIRS=()
           while IFS= read -r file; do
-            if [ -n "$file" ]; then
-              dir=$(dirname "$file" | sed 's|^\./||')
-              PYTHON_DIRS+=("$dir")
-            fi
-          done < <(find . -type f \( -name "setup.py" -o -name "pyproject.toml" \))
-
-          echo "Found ${#PYTHON_DIRS[@]} Python project(s)"
-
+            dir=$(dirname "$file")
+            PYTHON_DIRS+=("$dir")
+          done < <(find . -type f \( -name "setup.py" -o -name "pyproject.toml" \) | sed 's|^\./||')
+          
           if [ ${#PYTHON_DIRS[@]} -gt 0 ]; then
-            echo "has-python=true" >> "$GITHUB_OUTPUT"
+            echo "has-python=true" >> $GITHUB_OUTPUT
             echo "Python projects found in:"
             printf '%s\n' "${PYTHON_DIRS[@]}"
-
+            
             # Save directories for iteration
             printf '%s\n' "${PYTHON_DIRS[@]}" > /tmp/python_dirs.txt
-            echo "DEBUG: has-python output set to: true"
           else
-            echo "has-python=false" >> "$GITHUB_OUTPUT"
+            echo "has-python=false" >> $GITHUB_OUTPUT
             echo "No Python projects found"
-            echo "DEBUG: has-python output set to: false"
           fi
 
       - name: 'Check for pom.xml'
@@ -157,7 +144,7 @@ jobs:
           while IFS= read -r python_dir; do
             echo "Building Python project in: $python_dir"
             cd "$GITHUB_WORKSPACE/$python_dir"
-
+            
             # Determine Python version and build
             if [ -f "pyproject.toml" ]; then
               echo "Using pyproject.toml build"
@@ -168,7 +155,7 @@ jobs:
               python -m pip install --upgrade pip setuptools wheel
               python setup.py sdist bdist_wheel
             fi
-
+            
             cd "$GITHUB_WORKSPACE"
           done < /tmp/python_dirs.txt
 
@@ -330,7 +317,7 @@ jobs:
     steps:
       # Harden the runner used by this workflow
       # yamllint disable-line rule:line-length
-      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76  # v2.14.0
+      - uses: step-security/harden-runner@df199fb7be9f65074067a9eb93f12bb4c5547cf2  # v2.13.3
         with:
           egress-policy: audit
 
